@@ -35,10 +35,10 @@ static float g_mph = 0.0f;
 Open-drain sink output to emulate hall/open-collector VSS line.
 */
 #define VSS_GPIO               GPIO_NUM_25   // change if you want
-#define VSS_ACTIVE_LOW         1             // sink = 0, release = 1 (open-drain)
 
 /* Calibration: pulses per mile (tune this to match your speedo) */
-#define VSS_PULSES_PER_MILE    4000.0f        // starting point
+
+#define VSS_PULSES_PER_MILE (int)(4000 * 1.035)        // ≈ 4140 for 2007 Subaru Impreza 2.5i
 #define MPH_TIMEOUT_MS         1500           // stop pulses if stale
 
 static volatile int64_t g_last_mph_us = 0;
@@ -180,15 +180,15 @@ static void vss_gpio_init(void)
 {
     gpio_config_t io = {
         .pin_bit_mask = (1ULL << VSS_GPIO),
-        .mode = GPIO_MODE_OUTPUT_OD,     // open-drain output
+        .mode = GPIO_MODE_OUTPUT,        // PUSH-PULL output (driving NPN base)
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE
     };
     ESP_ERROR_CHECK(gpio_config(&io));
 
-    // "released" state: open-drain high (line pulled up externally by ECU)
-    gpio_set_level(VSS_GPIO, 1);
+    // idle state: base LOW -> transistor OFF -> VSS line released
+    gpio_set_level(VSS_GPIO, 0);
 }
 
 static void vss_timer_cb(void *arg)
@@ -198,22 +198,20 @@ static void vss_timer_cb(void *arg)
     const int64_t now = esp_timer_get_time();
     const int64_t age_ms = (now - g_last_mph_us) / 1000;
 
-    // stale data or zero speed -> stop pulsing, release line
+     // stale data or zero speed -> stop pulsing, turn transistor OFF, release line
     if (age_ms > MPH_TIMEOUT_MS || g_target_hz <= 0.1f) {
         g_vss_level_low = false;
-        gpio_set_level(VSS_GPIO, 1); // release
+        gpio_set_level(VSS_GPIO, 0); // base LOW -> transistor OFF -> release
         esp_timer_stop(g_vss_timer);
         return;
     }
 
     // Toggle output level each tick (50% duty)
+    // g_vss_level_low == "sink ON" phase
     g_vss_level_low = !g_vss_level_low;
 
-    if (VSS_ACTIVE_LOW) {
-        gpio_set_level(VSS_GPIO, g_vss_level_low ? 0 : 1);
-    } else {
-        gpio_set_level(VSS_GPIO, g_vss_level_low ? 1 : 0);
-    }
+    // NPN inverts: base HIGH -> collector LOW (sink), base LOW -> release
+    gpio_set_level(VSS_GPIO, g_vss_level_low ? 1 : 0);
 
     // Compute half-period (us) for current target Hz
     float hz = g_target_hz;
