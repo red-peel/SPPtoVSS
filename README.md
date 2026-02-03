@@ -1,108 +1,141 @@
-GPStoSPP
+# GPStoSPP
 
-GPStoSPP is an Android app that reads your phone’s GPS-derived speed and streams it over Bluetooth Serial Port Profile (SPP / RFCOMM) to a listening device (typically a microcontroller).
+**GPStoSPP** is an Android application that reads GPS‑derived speed data and transmits it over **Bluetooth Classic using the Serial Port Profile (SPP)**.
 
-This repo is the phone-side transmitter in a two-part system designed to turn GPS speed into a hardware signal a vehicle can understand.
+This repository represents the **Android / phone-side** of a larger system designed to emulate a vehicle speed signal using an **ESP32 microcontroller**.
 
-How this relates to the ESP32 project
+> Think of this as the *sensor and data source*.  
+> The ESP32 project is the *translator and hardware interface*.
 
-GPStoSPP pairs with the ESP32 firmware repo:
+## 🔗 Related Project (ESP32)
 
-ESP32 receiver / signal generator: SPPtoVSS
+This app is designed to pair with the ESP32 firmware found here:
+
+👉 **ESP32 Bluetooth SPP → VSS Emulator**  
 https://github.com/red-peel/SPPtoVSS
 
-Data flow (full system):
+**High‑level flow:**
 
-Android (this repo): calculates speed from GPS and transmits it over Bluetooth SPP
+```
+Android Phone (GPS)
+        ↓
+Bluetooth SPP
+        ↓
+ESP32
+        ↓
+ECU / Speedometer / VSS Line
+```
 
-ESP32 (SPPtoVSS): receives the speed data and converts it into a pulse output suitable for a vehicle’s VSS/ECU/speedometer input
-
-In other words: GPStoSPP is the sensor, SPPtoVSS is the translator.
-
-What it does
-
-Uses GPS location updates to compute speed
-
-Displays current speed in the UI
-
-Streams speed values to a paired Bluetooth device over SPP (RFCOMM “COM port” style)
-
-Expected output format
-
-The ESP32 side expects plain-text speed values sent over the SPP socket.
-
-Typical implementations use:
-
-one value per line (newline-terminated), e.g.:
-
-48.5
-49.0
-48.7
+The phone provides accurate, filtered GPS speed.  
+The ESP32 converts that speed into a physical signal usable by automotive hardware.
 
 
-If you ever change the format here (units, delimiter, JSON, etc.), the ESP32 parser must match.
 
-Requirements
+## 🧠 What This App Does
 
-Android device with GPS
+- Reads GPS speed data from the Android location services
+- Formats speed as a lightweight serial stream
+- Opens a Bluetooth Classic SPP connection
+- Streams speed data continuously to a paired ESP32
 
-Bluetooth enabled
+This allows:
+- No GPS module on the ESP32
+- Faster iteration and tuning
+- Easy validation using phone tools
 
-A paired Bluetooth device that supports SPP (classic Bluetooth RFCOMM)
 
-ESP32 typically uses Bluetooth Classic SPP (not BLE) for this
 
-Build & run
+## 📡 Why Bluetooth SPP?
 
-Clone:
+Bluetooth SPP is effectively a **wireless UART**:
 
-git clone https://github.com/red-peel/GPStoSPP
+- Simple byte stream
+- Low overhead
+- Well supported on ESP32
+- Easy to debug with serial terminal tools
 
-Open in Android Studio
+On Android, SPP behaves like a persistent socket connection.  
+On ESP32, it appears as a serial RX buffer.
 
-Build/Run on a physical device (emulators don’t do real GPS + Bluetooth SPP reliably)
+Perfect for real‑time telemetry.
 
-Pair your ESP32/receiver in Android Bluetooth settings
 
-In the app, connect and start streaming
 
-Permissions
+## 🛠️ Build & Run
 
-This app needs:
+### Prerequisites
 
-Location permission (to read GPS speed)
+- Android Studio
+- Android device with GPS + Bluetooth Classic
+- Android 8.0+ recommended
 
-Bluetooth permissions (to connect + stream)
+### Build Steps
 
-Android 12+ devices require the newer Bluetooth permission set; older versions use the legacy model. If permissions are denied, you’ll see “connects but no data” style symptoms.
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/red-peel/GPStoSPP.git
+   ```
 
-Troubleshooting
-“It connects, but the ESP32 gets nothing”
+2. Open the project in **Android Studio**.
 
-Confirm the ESP32 is advertising/accepting SPP (Bluetooth Classic), not BLE
+3. Grant required permissions when prompted:
+   - Location (fine)
+   - Bluetooth / Nearby Devices
 
-Confirm you’re connecting to the correct paired device
+4. Build and run on a physical Android device.
 
-Confirm both sides agree on the speed format (see above)
+> ⚠️ GPS speed accuracy depends on movement and satellite lock.
 
-“Speed gets weird when the app is in the background”
 
-That’s usually Android being “helpful” with background location updates. Solutions tend to involve:
 
-Foreground service + persistent notification (so the OS keeps location updates flowing)
+## 🔌 Runtime Behavior
 
-Requesting higher-accuracy location / proper update intervals
+1. App starts GPS tracking.
+2. App scans and connects to the ESP32 over Bluetooth SPP.
+3. Speed data is sent continuously as plain text.
+4. ESP32 parses speed and generates the VSS‑equivalent signal.
 
-Disabling battery optimizations for the app
+Opening the app foreground improves GPS update rate and accuracy.
 
-(If you want, I can write the Foreground Service implementation cleanly — no duct tape.)
 
-Roadmap ideas
 
-Foreground Service mode for reliable background streaming
+## 📂 Project Structure
 
-Configurable output format (mph/kph, newline vs CSV vs JSON)
+```
+GPStoSPP/
+├── app/
+│   ├── bluetooth/
+│   ├── speed/
+│   └── ui/
+├── gradle/
+├── build.gradle.kts
+└── settings.gradle.kts
+```
 
-Connection status + reconnection logic
+Key logic lives under:
+- `speed/` → GPS speed acquisition
+- `bluetooth/` → SPP socket handling
 
-Logging / export session data for tuning the ESP32 pulse conversion
+
+
+## 🧩 Intended Use Case
+
+This project is **not** a generic GPS logger.
+
+It exists specifically to:
+- Feed real‑time speed data to an ESP32
+- Support automotive signal emulation
+- Enable testing and development without drivetrain sensors
+
+
+
+
+## 🧠 Notes
+
+- Background GPS update rates may be throttled by Android
+- Foreground execution provides the best speed accuracy
+- Designed for pairing with **SPPtoVSS**, not BLE
+
+
+
+If you know why you need this app, you are the target audience.
